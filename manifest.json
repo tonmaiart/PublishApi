@@ -1,0 +1,9 @@
+{
+  "id": "publish_api",
+  "name": "PublishApi",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entry_point": "plugin.py",
+  "description": "Shared Maya-side library for resolving publish destinations from Project Editor's pipeline metadata and creating versioned publish folders — the single source of truth MayaPublisher builds on. Contributes its maya-scripts folder (plus UkoreHub's own app root) to the Maya Launcher env bridge — does not launch Maya itself and has no UI of its own.",
+  "requires": ["project_editor"]
+}

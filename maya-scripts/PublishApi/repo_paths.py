@@ -18,6 +18,7 @@ distinct "pipeline_outputs" one."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -30,6 +31,21 @@ def find_ukorehub_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
+def _load_project_blob(root: Path, project_id: str):
+    """Helper to load Schema v2 project blob directly from data/projects/<project_id>.json"""
+    blob_file = root / "data" / "projects" / f"{project_id}.json"
+    if not blob_file.exists():
+        return None
+    try:
+        with open(blob_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        from core.models import Project
+        return Project.from_dict(data)
+    except Exception as err:
+        print(f"[PublishApi] Error reading project blob {project_id}: {err}")
+        return None
+
+
 def get_active_repo():
     """(project, repo, repo_path) for whichever repo is currently active in
     UkoreHub, or (None, None, None) if there isn't one (no workspace
@@ -39,7 +55,6 @@ def get_active_repo():
     api.metadata through."""
     root = find_ukorehub_root()
     from core.storage.config_store import LocalConfigStore
-    from core.storage.metadata_store import MetadataStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
     project_id = local_config.active_project_id
@@ -47,13 +62,12 @@ def get_active_repo():
     if not (local_config.workspace_root and project_id and repo_id):
         return None, None, None
 
-    from core.exceptions import NotFoundError
+    project = _load_project_blob(root, project_id)
+    if project is None:
+        return None, None, None
 
-    store = MetadataStore(root / "data" / "projects.json")
-    try:
-        project = store.get_project(project_id)
-        repo = store.get_repo(project_id, repo_id)
-    except NotFoundError:
+    repo = next((r for r in project.repos if r.id == repo_id), None)
+    if repo is None:
         return None, None, None
 
     repo_path = Path(local_config.workspace_root) / repo.local_path
@@ -80,17 +94,20 @@ def resolve_ref(ref: dict):
     exist on disk (the repo may not be cloned locally yet) — callers
     should check `repo_path.is_dir()` themselves if that matters."""
     root = find_ukorehub_root()
-    from core.exceptions import NotFoundError
     from core.storage.config_store import LocalConfigStore
-    from core.storage.metadata_store import MetadataStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
-    store = MetadataStore(root / "data" / "projects.json")
-    try:
-        project = store.get_project(ref["project_id"])
-        repo = store.get_repo(ref["project_id"], ref["repo_id"])
-    except NotFoundError:
+    if not local_config.workspace_root or "project_id" not in ref or "repo_id" not in ref:
         return None
+
+    project = _load_project_blob(root, ref["project_id"])
+    if project is None:
+        return None
+
+    repo = next((r for r in project.repos if r.id == ref["repo_id"]), None)
+    if repo is None:
+        return None
+
     repo_path = Path(local_config.workspace_root) / repo.local_path
     return project, repo, repo_path
 
@@ -102,14 +119,14 @@ def get_custom_paths(project_id: str, repo_id: str) -> list[dict]:
     plugin_data["project_editor"] (core/models.py's Repo), same field
     get_pipeline_refs() uses."""
     root = find_ukorehub_root()
-    from core.exceptions import NotFoundError
-    from core.storage.metadata_store import MetadataStore
-
-    store = MetadataStore(root / "data" / "projects.json")
-    try:
-        repo = store.get_repo(project_id, repo_id)
-    except NotFoundError:
+    project = _load_project_blob(root, project_id)
+    if project is None:
         return []
+
+    repo = next((r for r in project.repos if r.id == repo_id), None)
+    if repo is None:
+        return []
+
     return repo.plugin_data.get("project_editor", {}).get("custom_paths", [])
 
 
@@ -121,17 +138,6 @@ def get_custom_path(project_id: str, repo_id: str, custom_path_id: str | None) -
     if not custom_path_id:
         return None
     for custom_path in get_custom_paths(project_id, repo_id):
-        if custom_path["id"] == custom_path_id:
+        if custom_path.get("id") == custom_path_id:
             return custom_path
     return None
-
-
-# Note: this file used to also have get_chosen_output_ref(tool_id) and
-# get_publish_root(tool_id) — a single Publish Path chosen per tool per
-# repo, read from a UkoreHub-side Repo Studio Setting tab. Removed
-# 2026-08-03 when ModelPublisher/RigPublisher/AnimationPublisher moved to
-# user-managed per-ticket Publish Paths entirely configured in Maya — see
-# tickets.py's get_publish_root_for_ticket(tool_id, ticket), which
-# resolves a specific ticket's own stored ref through the same
-# resolve_ref()/get_custom_path() helpers below instead of one shared
-# per-repo choice.

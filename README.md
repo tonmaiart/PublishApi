@@ -80,7 +80,7 @@ Returns the currently active `(project, repo, repo_path)` in UkoreHub by reading
 
 ```text
 cache/local_config.json
-data/projects.json
+data/projects/<project_id>.json  (Schema v2 project blob)
 ```
 
 Returns:

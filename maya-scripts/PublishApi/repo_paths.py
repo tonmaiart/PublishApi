@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 
@@ -10,22 +9,20 @@ def find_ukorehub_root() -> Path:
     return Path(__file__).resolve().parents[5]
 
 
-def _load_project_data(root: Path, project_id: str) -> dict | None:
-    """Helper อ่าน Project Blob ย่อยตาม Schema v2"""
-    blob_path = root / "data" / "projects" / f"{project_id}.json"
-    if not blob_path.exists():
-        return None
-    try:
-        with open(blob_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as err:
-        print(f"[PublishApi] Failed to load project blob {project_id}: {err}")
-        return None
+def _open_store(root: Path):
+    """MetadataStore straight off disk (Maya's Python has no PluginAPI
+    instance to go through) — same construction UkoreBrowser.core.repo_context
+    uses, so both read through the one real Project/Repo registry format
+    (data/projects.json) instead of guessing at its on-disk layout."""
+    from core.storage.metadata_store import MetadataStore
+
+    return MetadataStore(root / "data" / "projects.json")
 
 
 def get_active_repo():
     """(project, repo, repo_path) สำหรับ Active Repo ปัจจุบัน"""
     root = find_ukorehub_root()
+    from core.exceptions import NotFoundError
     from core.storage.config_store import LocalConfigStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
@@ -36,15 +33,11 @@ def get_active_repo():
     if not (workspace_root and project_id and repo_id):
         return None, None, None
 
-    proj_dict = _load_project_data(root, project_id)
-    if not proj_dict:
-        return None, None, None
-
-    from core.models import Project
-    project = Project.from_dict(proj_dict)
-    repo = next((r for r in project.repos if r.id == repo_id), None)
-
-    if repo is None:
+    store = _open_store(root)
+    try:
+        project = store.get_project(project_id)
+        repo = store.get_repo(project_id, repo_id)
+    except NotFoundError:
         return None, None, None
 
     repo_path = Path(workspace_root) / repo.local_path
@@ -60,6 +53,7 @@ def get_pipeline_refs() -> list[dict]:
 
 def resolve_ref(ref: dict):
     root = find_ukorehub_root()
+    from core.exceptions import NotFoundError
     from core.storage.config_store import LocalConfigStore
 
     local_config = LocalConfigStore(root / "cache" / "local_config.json")
@@ -69,15 +63,11 @@ def resolve_ref(ref: dict):
     if not (local_config.workspace_root and project_id and repo_id):
         return None
 
-    proj_dict = _load_project_data(root, project_id)
-    if not proj_dict:
-        return None
-
-    from core.models import Project
-    project = Project.from_dict(proj_dict)
-    repo = next((r for r in project.repos if r.id == repo_id), None)
-
-    if repo is None:
+    store = _open_store(root)
+    try:
+        project = store.get_project(project_id)
+        repo = store.get_repo(project_id, repo_id)
+    except NotFoundError:
         return None
 
     repo_path = Path(local_config.workspace_root) / repo.local_path
@@ -86,15 +76,12 @@ def resolve_ref(ref: dict):
 
 def get_custom_paths(project_id: str, repo_id: str) -> list[dict]:
     root = find_ukorehub_root()
-    proj_dict = _load_project_data(root, project_id)
-    if not proj_dict:
-        return []
+    from core.exceptions import NotFoundError
 
-    from core.models import Project
-    project = Project.from_dict(proj_dict)
-    repo = next((r for r in project.repos if r.id == repo_id), None)
-
-    if repo is None:
+    store = _open_store(root)
+    try:
+        repo = store.get_repo(project_id, repo_id)
+    except NotFoundError:
         return []
 
     return repo.plugin_data.get("project_editor", {}).get("custom_paths", [])

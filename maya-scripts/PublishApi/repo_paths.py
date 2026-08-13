@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
 def find_ukorehub_root() -> Path:
+    """The real app root (holds data/), not necessarily an ancestor of this
+    plugin's own location — cache/plugins/ is deliberately allowed to live
+    outside it (see app/launcher.py's UKOREHUB_CACHE_DIR handling). Maya
+    inherits UKOREHUB_APP_ROOT from the launching UkoreHub process's env;
+    the parent-climb is only a fallback for a mayapy session started without
+    that env var (e.g. launched outside UkoreHub's own Maya-launch flow)."""
+    env_root = os.environ.get("UKOREHUB_APP_ROOT")
+    if env_root:
+        return Path(env_root)
     return Path(__file__).resolve().parents[5]
 
 

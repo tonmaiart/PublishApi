@@ -84,8 +84,7 @@ def _migrate_from_shared_store(tool_id: str, project_id: str, repo_id: str) -> l
 
     from core.extensibility.config_store import PluginConfigStore
 
-    root = repo_paths.find_ukorehub_root()
-    shared_store = PluginConfigStore(root / "data" / "plugins" / "core" / f"{tool_id}.json")
+    shared_store = PluginConfigStore(repo_paths.find_data_dir() / "plugins" / "core" / f"{tool_id}.json")
     key = f"{project_id}:{repo_id}"
 
     tickets = shared_store.get("tickets", {}).get(key)

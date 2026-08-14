@@ -340,8 +340,7 @@ class TicketManagerDialog(QtWidgets.QDialog):
         from core.exceptions import NotFoundError
         from core.storage.metadata_store import MetadataStore
 
-        root = repo_paths.find_ukorehub_root()
-        store = MetadataStore(root / "data" / "projects.json")
+        store = MetadataStore(repo_paths.find_data_dir() / "projects.json")
         try:
             target_name = store.get_repo(ref["project_id"], ref["repo_id"]).name
         except NotFoundError:
